@@ -15,7 +15,7 @@ MAX_CANDLES = 300  # keep last ~300 candles for now
 # -------------------------------------------------
 # Basic routes (health + status)
 # -------------------------------------------------
-@app.route("")
+@app.route("/")
 def home():
     return "Schwab bot is alive 🧠📈"
 
@@ -97,18 +97,77 @@ def feed_candle():
     })
 
 # -------------------------------------------------
-# Simple analysis stub (we’ll make it smarter later)
+# Analysis endpoint (indicator snapshot)
 # -------------------------------------------------
-@app.route("/analysis", methods=["GET", "POST"])
+@app.route("/analysis", methods=["GET"])
 def analysis():
     """
-    For now just reports how many candles we have stored.
-    Later this will run your real options logic.
+    Returns indicator snapshot for the latest candle in a timeframe.
+
+    Query params:
+      timeframe: e.g. "1m", "5m", "15m" (defaults to "1m")
+
+    Response:
+      {
+        "ok": true,
+        "timeframe": "1m",
+        "candle_count": 123,
+        "latest": {
+          "timestamp": "...",
+          "close": 6805.7,
+          "EMA5": ...,
+          "EMA10": ...,
+          "EMA20": ...,
+          "EMA50": ...,
+          "MA5": ...,
+          "MA9": ...,
+          "MA20": ...,
+          "BOLL_MID": ...,
+          "BOLL_UPPER": ...,
+          "BOLL_LOWER": ...
+        }
+      }
     """
+    # timeframe filter, default 1m
+    timeframe = request.args.get("timeframe", "1m")
+
+    # Filter candles already stored in memory
+    candles_for_tf = [c for c in RECENT_CANDLES if c.get("timeframe") == timeframe]
+
+    if not candles_for_tf:
+        return jsonify({
+            "ok": False,
+            "error": f"No candles stored for timeframe '{timeframe}' yet."
+        }), 400
+
+    latest, _all_rows = compute_indicators(candles_for_tf)
+
+    if latest is None:
+        return jsonify({
+            "ok": False,
+            "error": "Not enough data to compute indicators."
+        }), 400
+
+    out = {
+        "timestamp": latest.get("timestamp"),
+        "close": latest.get("close"),
+        "EMA5": latest.get("EMA5"),
+        "EMA10": latest.get("EMA10"),
+        "EMA20": latest.get("EMA20"),
+        "EMA50": latest.get("EMA50"),
+        "MA5": latest.get("MA5"),
+        "MA9": latest.get("MA9"),
+        "MA20": latest.get("MA20"),
+        "BOLL_MID": latest.get("BOLL_MID"),
+        "BOLL_UPPER": latest.get("BOLL_UPPER"),
+        "BOLL_LOWER": latest.get("BOLL_LOWER"),
+    }
+
     return jsonify({
         "ok": True,
-        "message": "Analysis endpoint",
-        "stored_candles": len(RECENT_CANDLES),
+        "timeframe": timeframe,
+        "candle_count": len(candles_for_tf),
+        "latest": out
     })
 
 # -------------------------------------------------
