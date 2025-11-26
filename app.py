@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+from indicators import compute_indicators
 
 # -------------------------------------------------
 # Create the Flask app
@@ -14,7 +15,7 @@ MAX_CANDLES = 300  # keep last ~300 candles for now
 # -------------------------------------------------
 # Basic routes (health + status)
 # -------------------------------------------------
-@app.route("/")
+@app.route("")
 def home():
     return "Schwab bot is alive 🧠📈"
 
