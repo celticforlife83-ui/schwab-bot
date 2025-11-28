@@ -148,20 +148,36 @@ def analysis():
             "error": "Not enough data to compute indicators."
         }), 400
 
-    out = {
-        "timestamp": latest.get("timestamp"),
-        "close": latest.get("close"),
-        "EMA5": latest.get("EMA5"),
-        "EMA10": latest.get("EMA10"),
-        "EMA20": latest.get("EMA20"),
-        "EMA50": latest.get("EMA50"),
-        "MA5": latest.get("MA5"),
-        "MA9": latest.get("MA9"),
-        "MA20": latest.get("MA20"),
-        "BOLL_MID": latest.get("BOLL_MID"),
-        "BOLL_UPPER": latest.get("BOLL_UPPER"),
-        "BOLL_LOWER": latest.get("BOLL_LOWER"),
-    }
+    def f(x):
+        """Convert NumPy/Pandas types to native Python types for JSON serialization."""
+        if x is None:
+            return None
+        try:
+            if hasattr(x, 'item'):
+                x = x.item()
+        except Exception:
+            pass
+        # Convert timestamp-like objects to string
+        if hasattr(x, 'to_pydatetime'):
+            try:
+                return str(x.to_pydatetime())
+            except Exception:
+                return str(x)
+        if hasattr(x, 'isoformat') and callable(getattr(x, 'isoformat')):
+            try:
+                return x.isoformat()
+            except Exception:
+                return str(x)
+        # Numeric normalization
+        if isinstance(x, (int, float)):
+            return float(x)
+        return x
+
+    indicator_keys = ["EMA5", "EMA10", "EMA20", "EMA50", "MA5", "MA9", "MA20",
+                      "BOLL_MID", "BOLL_UPPER", "BOLL_LOWER"]
+    out = {k: f(latest.get(k)) for k in indicator_keys}
+    out['timestamp'] = f(latest.get('timestamp'))
+    out['close'] = f(latest.get('close'))
 
     return jsonify({
         "ok": True,
