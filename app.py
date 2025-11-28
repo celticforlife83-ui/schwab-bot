@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 from indicators import compute_indicators
+from signal_logic import classify_trend
 
 # -------------------------------------------------
 # Create the Flask app
@@ -168,6 +169,58 @@ def analysis():
         "timeframe": timeframe,
         "candle_count": len(candles_for_tf),
         "latest": out
+    })
+
+# -------------------------------------------------
+# Signal endpoint (trend classification)
+# -------------------------------------------------
+@app.route("/signal", methods=["GET"])
+def signal():
+    """Returns latest indicators and classified trend for the requested timeframe."""
+    timeframe = request.args.get("timeframe", "1m")
+
+    candles_for_tf = [c for c in RECENT_CANDLES if c.get("timeframe") == timeframe]
+    if not candles_for_tf:
+        return jsonify({
+            "ok": False,
+            "error": f"No candles stored for timeframe '{timeframe}' yet."
+        }), 400
+
+    latest, _all_rows = compute_indicators(candles_for_tf)
+    if latest is None:
+        return jsonify({
+            "ok": False,
+            "error": "Not enough data to compute indicators."
+        }), 400
+
+    out = {
+        "timestamp": latest.get("timestamp"),
+        "close": latest.get("close"),
+        "EMA5": latest.get("EMA5"),
+        "EMA10": latest.get("EMA10"),
+        "EMA20": latest.get("EMA20"),
+        "EMA50": latest.get("EMA50"),
+        "MA5": latest.get("MA5"),
+        "MA9": latest.get("MA9"),
+        "MA20": latest.get("MA20"),
+        "BOLL_MID": latest.get("BOLL_MID"),
+        "BOLL_UPPER": latest.get("BOLL_UPPER"),
+        "BOLL_LOWER": latest.get("BOLL_LOWER"),
+        "MACD_LINE": latest.get("MACD_LINE"),
+        "MACD_SIGNAL": latest.get("MACD_SIGNAL"),
+        "MACD_HIST": latest.get("MACD_HIST"),
+        "RSI14": latest.get("RSI14"),
+        "ATR14": latest.get("ATR14"),
+        "WILLR14": latest.get("WILLR14"),
+    }
+
+    signal_output = classify_trend(latest)
+
+    return jsonify({
+        "ok": True,
+        "timeframe": timeframe,
+        "latest": out,
+        "signal": signal_output,
     })
 
 # -------------------------------------------------
