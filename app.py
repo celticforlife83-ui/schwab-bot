@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request
 from indicators import compute_indicators
 from signal_logic import classify_trend
+from utils import sanitize_latest_indicators
 
 # -------------------------------------------------
 # Create the Flask app
@@ -107,32 +108,9 @@ def analysis():
 
     Query params:
       timeframe: e.g. "1m", "5m", "15m" (defaults to "1m")
-
-    Response:
-      {
-        "ok": true,
-        "timeframe": "1m",
-        "candle_count": 123,
-        "latest": {
-          "timestamp": "...",
-          "close": 6805.7,
-          "EMA5": ...,
-          "EMA10": ...,
-          "EMA20": ...,
-          "EMA50": ...,
-          "MA5": ...,
-          "MA9": ...,
-          "MA20": ...,
-          "BOLL_MID": ...,
-          "BOLL_UPPER": ...,
-          "BOLL_LOWER": ...
-        }
-      }
     """
-    # timeframe filter, default 1m
     timeframe = request.args.get("timeframe", "1m")
 
-    # Filter candles already stored in memory
     candles_for_tf = [c for c in RECENT_CANDLES if c.get("timeframe") == timeframe]
 
     if not candles_for_tf:
@@ -149,26 +127,13 @@ def analysis():
             "error": "Not enough data to compute indicators."
         }), 400
 
-    out = {
-        "timestamp": latest.get("timestamp"),
-        "close": latest.get("close"),
-        "EMA5": latest.get("EMA5"),
-        "EMA10": latest.get("EMA10"),
-        "EMA20": latest.get("EMA20"),
-        "EMA50": latest.get("EMA50"),
-        "MA5": latest.get("MA5"),
-        "MA9": latest.get("MA9"),
-        "MA20": latest.get("MA20"),
-        "BOLL_MID": latest.get("BOLL_MID"),
-        "BOLL_UPPER": latest.get("BOLL_UPPER"),
-        "BOLL_LOWER": latest.get("BOLL_LOWER"),
-    }
+    clean_latest = sanitize_latest_indicators(latest)
 
     return jsonify({
         "ok": True,
         "timeframe": timeframe,
         "candle_count": len(candles_for_tf),
-        "latest": out
+        "latest": clean_latest
     })
 
 # -------------------------------------------------
@@ -179,7 +144,7 @@ def signal():
     """Returns latest indicators and classified trend for the requested timeframe."""
     timeframe = request.args.get("timeframe", "1m")
 
-    candles_for_tf = [c for c in RECENT_CANDLES if c.get("timeframe") == timeframe]
+    candles_for_tf = [c for c in RECENT_CANDLES if c.get("timeframe") == timezone]
     if not candles_for_tf:
         return jsonify({
             "ok": False,
@@ -193,34 +158,14 @@ def signal():
             "error": "Not enough data to compute indicators."
         }), 400
 
-    out = {
-        "timestamp": latest.get("timestamp"),
-        "close": latest.get("close"),
-        "EMA5": latest.get("EMA5"),
-        "EMA10": latest.get("EMA10"),
-        "EMA20": latest.get("EMA20"),
-        "EMA50": latest.get("EMA50"),
-        "MA5": latest.get("MA5"),
-        "MA9": latest.get("MA9"),
-        "MA20": latest.get("MA20"),
-        "BOLL_MID": latest.get("BOLL_MID"),
-        "BOLL_UPPER": latest.get("BOLL_UPPER"),
-        "BOLL_LOWER": latest.get("BOLL_LOWER"),
-        "MACD_LINE": latest.get("MACD_LINE"),
-        "MACD_SIGNAL": latest.get("MACD_SIGNAL"),
-        "MACD_HIST": latest.get("MACD_HIST"),
-        "RSI14": latest.get("RSI14"),
-        "ATR14": latest.get("ATR14"),
-        "WILLR14": latest.get("WILLR14"),
-    }
-
-    signal_output = classify_trend(latest)
+    clean_latest = sanitize_latest_indicators(latest)
+    signal_data = classify_trend(clean_latest)
 
     return jsonify({
         "ok": True,
         "timeframe": timeframe,
-        "latest": out,
-        "signal": signal_output,
+        "latest": clean_latest,
+        "signal": signal_data,
     })
 
 # -------------------------------------------------
