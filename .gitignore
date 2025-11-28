@@ -205,3 +205,17 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Financial & Deployment Security (Second Engineer's Recommended Additions)
+# Always ignore configuration files that might contain secrets
+secrets.*
+config.yml
+render.yml
+render.yaml
+auth.json
+
+# Environment variable files often used in deployment scripts
+.env
+.env.*
+production.env
+staging.env
