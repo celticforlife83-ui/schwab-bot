@@ -128,6 +128,9 @@ def analysis():
         }
       }
     """
+    import pandas as pd
+    import numpy as np
+
     # timeframe filter, default 1m
     timeframe = request.args.get("timeframe", "1m")
 
@@ -148,19 +151,29 @@ def analysis():
             "error": "Not enough data to compute indicators."
         }), 400
 
+    def clean(val):
+        """Convert pandas/numpy types to native Python types for JSON serialization."""
+        if pd.isna(val) or val is None:
+            return None
+        if isinstance(val, (np.integer, int)):
+            return int(val)
+        if isinstance(val, (np.floating, float)):
+            return float(val)
+        return str(val)
+
     out = {
-        "timestamp": latest.get("timestamp"),
-        "close": latest.get("close"),
-        "EMA5": latest.get("EMA5"),
-        "EMA10": latest.get("EMA10"),
-        "EMA20": latest.get("EMA20"),
-        "EMA50": latest.get("EMA50"),
-        "MA5": latest.get("MA5"),
-        "MA9": latest.get("MA9"),
-        "MA20": latest.get("MA20"),
-        "BOLL_MID": latest.get("BOLL_MID"),
-        "BOLL_UPPER": latest.get("BOLL_UPPER"),
-        "BOLL_LOWER": latest.get("BOLL_LOWER"),
+        "timestamp": clean(latest.get("timestamp")),
+        "close": clean(latest.get("close")),
+        "EMA5": clean(latest.get("EMA5")),
+        "EMA10": clean(latest.get("EMA10")),
+        "EMA20": clean(latest.get("EMA20")),
+        "EMA50": clean(latest.get("EMA50")),
+        "MA5": clean(latest.get("MA5")),
+        "MA9": clean(latest.get("MA9")),
+        "MA20": clean(latest.get("MA20")),
+        "BOLL_MID": clean(latest.get("BOLL_MID")),
+        "BOLL_UPPER": clean(latest.get("BOLL_UPPER")),
+        "BOLL_LOWER": clean(latest.get("BOLL_LOWER")),
     }
 
     return jsonify({
