@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 from indicators import compute_indicators
+import numpy as np
 
 # -------------------------------------------------
 # Create the Flask app
@@ -128,6 +129,24 @@ def analysis():
         }
       }
     """
+    # Helper to safely cast NumPy/Pandas types to native Python types
+    def f(x):
+        if x is None:
+            return None
+        # Handle NumPy/Pandas datetime types
+        if hasattr(x, 'isoformat'):  # Pandas Timestamp or datetime
+            return str(x)
+        if isinstance(x, np.datetime64):
+            return str(x)
+        # Handle NumPy scalar types
+        if isinstance(x, np.generic):
+            return float(x)
+        # Handle native Python types - ensure numeric becomes float
+        if isinstance(x, (int, float)):
+            return float(x)
+        # For strings and other types, return as-is
+        return x
+
     # timeframe filter, default 1m
     timeframe = request.args.get("timeframe", "1m")
 
@@ -140,34 +159,29 @@ def analysis():
             "error": f"No candles stored for timeframe '{timeframe}' yet."
         }), 400
 
-    latest, _all_rows = compute_indicators(candles_for_tf)
+    # Extract close prices for indicator computation
+    closes = [c.get("close") for c in candles_for_tf]
+    indicators = compute_indicators(closes)
 
-    if latest is None:
+    if indicators is None:
         return jsonify({
             "ok": False,
             "error": "Not enough data to compute indicators."
         }), 400
 
-    out = {
-        "timestamp": latest.get("timestamp"),
-        "close": latest.get("close"),
-        "EMA5": latest.get("EMA5"),
-        "EMA10": latest.get("EMA10"),
-        "EMA20": latest.get("EMA20"),
-        "EMA50": latest.get("EMA50"),
-        "MA5": latest.get("MA5"),
-        "MA9": latest.get("MA9"),
-        "MA20": latest.get("MA20"),
-        "BOLL_MID": latest.get("BOLL_MID"),
-        "BOLL_UPPER": latest.get("BOLL_UPPER"),
-        "BOLL_LOWER": latest.get("BOLL_LOWER"),
-    }
+    # Get the latest candle for timestamp and close
+    latest_candle = candles_for_tf[-1]
+
+    # Sanitize all indicator values for JSON serialization
+    sanitized = {k: f(v) for k, v in indicators.items()}
+    sanitized['timestamp'] = str(latest_candle.get("timestamp"))
+    sanitized['close'] = f(latest_candle.get("close"))
 
     return jsonify({
         "ok": True,
         "timeframe": timeframe,
         "candle_count": len(candles_for_tf),
-        "latest": out
+        "latest": sanitized
     })
 
 # -------------------------------------------------
