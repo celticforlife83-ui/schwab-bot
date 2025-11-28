@@ -144,7 +144,7 @@ def signal():
     """Returns latest indicators and classified trend for the requested timeframe."""
     timeframe = request.args.get("timeframe", "1m")
 
-    candles_for_tf = [c for c in RECENT_CANDLES if c.get("timeframe") == timezone]
+    candles_for_tf = [c for c in RECENT_CANDLES if c.get("timeframe") == timeframe]
     if not candles_for_tf:
         return jsonify({
             "ok": False,
