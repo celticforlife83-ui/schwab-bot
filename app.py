@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+from collections import defaultdict
 from indicators import compute_indicators
 from signal_logic import classify_trend
 from utils import sanitize_latest_indicators
@@ -9,10 +10,10 @@ from utils import sanitize_latest_indicators
 app = Flask(__name__)
 
 # -------------------------------------------------
-# In-memory candle store
+# In-memory candle store (Multi-Timeframe Analysis)
 # -------------------------------------------------
-RECENT_CANDLES = []
-MAX_CANDLES = 300  # keep last ~300 candles for now
+CANDLES = defaultdict(lambda: defaultdict(list))
+MAX_CANDLES_PER_TIMEFRAME = 300  # Keep a cap for cleanliness
 
 # -------------------------------------------------
 # Basic routes (health + status)
@@ -27,25 +28,16 @@ def healthz():
 
 @app.route("/status")
 def status():
+    # Count total stored candles across symbols/timeframes
+    total_candles = sum(len(tf_list) for symbol in CANDLES.values() for tf_list in symbol.values())
     data = {
         "bot": "schwab-bot",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "mode": "signal_only",        # later: 'live_trading'
         "schwab_connected": False,    # later: True when OAuth works
-        "stored_candles": len(RECENT_CANDLES),
+        "stored_candles": total_candles,
     }
     return jsonify(data)
-
-# -------------------------------------------------
-# Schwab OAuth placeholders
-# -------------------------------------------------
-@app.route("/schwab/auth/start")
-def schwab_auth_start():
-    return "Schwab auth start – not wired yet."
-
-@app.route("/schwab/auth/callback")
-def schwab_auth_callback():
-    return "Schwab auth callback – not wired yet."
 
 # -------------------------------------------------
 # Candle feed endpoint  (this is what ReqBin talks to)
@@ -53,10 +45,11 @@ def schwab_auth_callback():
 @app.route("/feed/candle", methods=["POST"])
 def feed_candle():
     """
-    Accepts one candle and stores it in RECENT_CANDLES.
+    Accepts one candle and stores it under CANDLES[symbol][timeframe].
 
     Example JSON body:
     {
+      "symbol": "SPX",               # default "SPX" if missing
       "timestamp": "2025-11-26T10:30:00",
       "timeframe": "1m",
       "open": 6800.5,
@@ -68,7 +61,10 @@ def feed_candle():
     """
     data = request.get_json(force=True) or {}
 
-    required_keys = ["timestamp", "timeframe", "open", "high", "low", "close"]
+    symbol = str(data.get("symbol", "SPX"))
+    timeframe = str(data.get("timeframe", "1m"))
+
+    required_keys = ["timestamp", "open", "high", "low", "close"]
     missing = [k for k in required_keys if k not in data]
     if missing:
         return jsonify({
@@ -78,7 +74,7 @@ def feed_candle():
 
     candle = {
         "timestamp": str(data["timestamp"]),
-        "timeframe": str(data["timeframe"]),  # e.g. "1m", "5m"
+        "timeframe": timeframe,  # store provided timeframe string
         "open": float(data["open"]),
         "high": float(data["high"]),
         "low": float(data["low"]),
@@ -86,15 +82,15 @@ def feed_candle():
         "volume": float(data.get("volume", 0.0)),
     }
 
-    RECENT_CANDLES.append(candle)
-
-    # keep only the most recent MAX_CANDLES
-    if len(RECENT_CANDLES) > MAX_CANDLES:
-        RECENT_CANDLES.pop(0)
+    # Append to nested store and trim per timeframe
+    CANDLES[symbol][timeframe].append(candle)
+    CANDLES[symbol][timeframe] = CANDLES[symbol][timeframe][-MAX_CANDLES_PER_TIMEFRAME:]
 
     return jsonify({
         "ok": True,
-        "stored_count": len(RECENT_CANDLES),
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "stored_count": len(CANDLES[symbol][timeframe]),
         "last_candle": candle
     })
 
@@ -107,16 +103,18 @@ def analysis():
     Returns indicator snapshot for the latest candle in a timeframe.
 
     Query params:
+      symbol: e.g. "SPX" (defaults to "SPX")
       timeframe: e.g. "1m", "5m", "15m" (defaults to "1m")
     """
+    symbol = request.args.get("symbol", "SPX")
     timeframe = request.args.get("timeframe", "1m")
 
-    candles_for_tf = [c for c in RECENT_CANDLES if c.get("timeframe") == timeframe]
+    candles_for_tf = CANDLES.get(symbol, {}).get(timeframe, [])
 
     if not candles_for_tf:
         return jsonify({
             "ok": False,
-            "error": f"No candles stored for timeframe '{timeframe}' yet."
+            "error": f"No candles stored for symbol '{symbol}' and timeframe '{timeframe}' yet."
         }), 400
 
     latest, _all_rows = compute_indicators(candles_for_tf)
@@ -131,6 +129,7 @@ def analysis():
 
     return jsonify({
         "ok": True,
+        "symbol": symbol,
         "timeframe": timeframe,
         "candle_count": len(candles_for_tf),
         "latest": clean_latest
@@ -141,14 +140,15 @@ def analysis():
 # -------------------------------------------------
 @app.route("/signal", methods=["GET"])
 def signal():
-    """Returns latest indicators and classified trend for the requested timeframe."""
+    """Returns latest indicators and classified trend for the requested symbol/timeframe."""
+    symbol = request.args.get("symbol", "SPX")
     timeframe = request.args.get("timeframe", "1m")
 
-    candles_for_tf = [c for c in RECENT_CANDLES if c.get("timeframe") == timeframe]
+    candles_for_tf = CANDLES.get(symbol, {}).get(timeframe, [])
     if not candles_for_tf:
         return jsonify({
             "ok": False,
-            "error": f"No candles stored for timeframe '{timeframe}' yet."
+            "error": f"No candles stored for symbol '{symbol}' and timeframe '{timeframe}' yet."
         }), 400
 
     latest, _all_rows = compute_indicators(candles_for_tf)
@@ -163,10 +163,35 @@ def signal():
 
     return jsonify({
         "ok": True,
+        "symbol": symbol,
         "timeframe": timeframe,
         "latest": clean_latest,
         "signal": signal_data,
     })
+
+# -------------------------------------------------
+# Multi-Timeframe Signal endpoint (MTA)
+# -------------------------------------------------
+@app.route("/mtf-signal", methods=["GET"])
+def mtf_signal():
+    """Returns signals across multiple requested timeframes for a given symbol."""
+    symbol = request.args.get("symbol", "SPX")
+    timeframes_raw = request.args.get("timeframes", "1m,5m,15m")
+    timeframes_list = [tf.strip() for tf in timeframes_raw.split(",") if tf.strip()]
+
+    results = {}
+    for tf in timeframes_list:
+        candles_for_tf = CANDLES.get(symbol, {}).get(tf, [])
+        if len(candles_for_tf) >= 1:
+            latest, _ = compute_indicators(candles_for_tf)
+            results[tf] = {
+                "latest": sanitize_latest_indicators(latest),
+                "signal": classify_trend(latest)
+            }
+        else:
+            results[tf] = {"error": f"Not enough data for {tf}."}
+
+    return jsonify({"symbol": symbol, "ok": True, "timeframes": results})
 
 # -------------------------------------------------
 # Local dev entry point (Render ignores this)
