@@ -7,7 +7,7 @@ import os
 # ═════════════════════════════════════════
 # EDIT THESE 4 LINES ONLY
 # ═════════════════════════════════════════
-BOT_URL     = "https://your-bot-name.onrender.com"   # ← YOUR RENDER URL
+BOT_URL     = "https://schwab-bot.onrender.com"   # ← YOUR RENDER URL
 CSV_FILE    = "SPX_2024-10-28_1m.csv"                # ← your 1-minute CSV for Oct 28
 SYMBOL      = "SPX"
 CHECK_EVERY = 15                                     # minutes → how often we ask the bot's brain
