@@ -1,8 +1,8 @@
 from flask import Flask, jsonify, request
 from collections import defaultdict
 from indicators import compute_indicators
-from signal_logic import classify_trend
-from utils import sanitize_latest_indicators
+from signal_logic import classify_trend, classify_day_mode
+from utils import sanitize_latest_indicators, sanitize_snapshot
 
 # -------------------------------------------------
 # Create the Flask app
@@ -74,7 +74,8 @@ def feed_candle():
 
     candle = {
         "timestamp": str(data["timestamp"]),
-        "timeframe": timeframe,  # store provided timeframe string
+        "timeframe": timeframe,
+        "symbol": symbol,
         "open": float(data["open"]),
         "high": float(data["high"]),
         "low": float(data["low"]),
@@ -174,24 +175,49 @@ def signal():
 # -------------------------------------------------
 @app.route("/mtf-signal", methods=["GET"])
 def mtf_signal():
-    """Returns signals across multiple requested timeframes for a given symbol."""
-    symbol = request.args.get("symbol", "SPX")
-    timeframes_raw = request.args.get("timeframes", "1m,5m,15m")
-    timeframes_list = [tf.strip() for tf in timeframes_raw.split(",") if tf.strip()]
+    symbol = request.args.get("symbol")
+    tf_param = request.args.get("timeframes")  # e.g. "1m,5m,15m,30m,1h,day,week"
 
-    results = {}
-    for tf in timeframes_list:
+    if not symbol or not tf_param:
+        return jsonify({"ok": False, "error": "symbol and timeframes are required"}), 400
+
+    tf_list = [tf.strip() for tf in tf_param.split(",") if tf.strip()]
+    timeframes_data = {}
+
+    for tf in tf_list:
         candles_for_tf = CANDLES.get(symbol, {}).get(tf, [])
-        if len(candles_for_tf) >= 1:
-            latest, _ = compute_indicators(candles_for_tf)
-            results[tf] = {
-                "latest": sanitize_latest_indicators(latest),
-                "signal": classify_trend(latest)
-            }
-        else:
-            results[tf] = {"error": f"Not enough data for {tf}."}
+        if not candles_for_tf:
+            timeframes_data[tf] = None
+            continue
 
-    return jsonify({"symbol": symbol, "ok": True, "timeframes": results})
+        latest_indicators, _ = compute_indicators(candles_for_tf)
+        if latest_indicators is None:
+            timeframes_data[tf] = None
+            continue
+
+        latest_candle = candles_for_tf[-1]
+        snapshot = sanitize_snapshot(latest_candle, latest_indicators)
+
+        trend_info = classify_trend(snapshot)
+        if isinstance(trend_info, dict):
+            snapshot["trend_label"] = trend_info.get("trend")
+            snapshot["trend_strength"] = trend_info.get("strength")
+            snapshot["trend_reason"] = trend_info.get("reason")
+        else:
+            # If classify_trend returns just a string like "BULLISH"/"BEARISH"/"CHOP"
+            snapshot["trend_label"] = trend_info
+
+        timeframes_data[tf] = snapshot
+
+    day_mode_info = classify_day_mode(timeframes_data)
+
+    return jsonify({
+        "ok": True,
+        "symbol": symbol,
+        "timeframes": timeframes_data,
+        "day_mode": day_mode_info.get("day_mode"),
+        "day_mode_reason": day_mode_info.get("reason"),
+    })
 
 # -------------------------------------------------
 # Local dev entry point (Render ignores this)
