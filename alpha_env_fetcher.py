@@ -2,114 +2,56 @@ import requests
 import pandas as pd
 import os
 
-# ==========================================
-# CONFIG
-# ==========================================
-API_KEY = "AGLES6UFIY44DV4F"  # TODO: replace with my real Alpha Vantage key
+API_KEY = "YOUR_REAL_API_KEY_HERE"  # keep your key here
 BASE_URL = "https://www.alphavantage.co/query"
 
-# Make sure data folders exist
-os.makedirs("data/daily", exist_ok=True)
-os.makedirs("data/weekly", exist_ok=True)
-os.makedirs("data/monthly", exist_ok=True)
+# We will treat this as SPX for the bot.
+# Alpha Vantage often uses ^GSPC for the S&P 500 index.
+SYMBOL = "^GSPC"   # index
+OUTPUT_SYMBOL_NAME = "SPX"  # how we label the files for your bot
 
-# Map the function name to the JSON key Alpha Vantage uses
 TIME_SERIES_KEYS = {
-    "TIME_SERIES_DAILY_ADJUSTED": "Time Series (Daily)",
     "TIME_SERIES_DAILY": "Time Series (Daily)",
     "TIME_SERIES_WEEKLY": "Weekly Time Series",
-    "TIME_SERIES_WEEKLY_ADJUSTED": "Weekly Adjusted Time Series",
     "TIME_SERIES_MONTHLY": "Monthly Time Series",
 }
 
-
-def get_time_series(function_name: str, symbol: str, outputsize: str = "compact") -> pd.DataFrame:
-    """
-    Generic downloader for Alpha Vantage time series.
-
-    - function_name: e.g. 'TIME_SERIES_DAILY_ADJUSTED', 'TIME_SERIES_WEEKLY', etc.
-    - symbol: e.g. 'SPY'
-    - outputsize: 'compact' or 'full' (only used for DAILY / DAILY_ADJUSTED)
-    """
+def fetch_series(function_name: str, folder: str, label: str):
     params = {
         "function": function_name,
-        "symbol": symbol,
+        "symbol": SYMBOL,
         "apikey": API_KEY,
         "datatype": "json",
     }
-
-    # Only daily endpoints support outputsize
+    # daily supports outputsize
     if "DAILY" in function_name:
-        params["outputsize"] = outputsize
+        params["outputsize"] = "compact"
 
     resp = requests.get(BASE_URL, params=params)
-    resp.raise_for_status()
     data = resp.json()
 
-    ts_key = TIME_SERIES_KEYS.get(function_name)
+    ts_key = TIME_SERIES_KEYS[function_name]
     if ts_key not in data:
-        raise ValueError(
-            f"Time series key '{ts_key}' not found in response. "
-            f"Response keys: {list(data.keys())}"
-        )
+        raise ValueError(f"{ts_key} not in response. Got keys: {list(data.keys())}")
 
     ts = data[ts_key]
-
-    # Convert to DataFrame (index is the date string)
     df = pd.DataFrame.from_dict(ts, orient="index")
-    df.index = pd.to_datetime(df.index)  # convert index to datetime
-    df = df.sort_index()  # oldest → newest
+    df.index.name = "date"
+    df.index = pd.to_datetime(df.index)
+    df = df.sort_index()
 
-    # Convert numeric columns to floats
     for col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    return df
+    os.makedirs(folder, exist_ok=True)
+    out_path = os.path.join(folder, f"{OUTPUT_SYMBOL_NAME}_{label}.csv")
+    df.to_csv(out_path)
+    print(f"Saved {len(df)} rows to {out_path}")
 
-
-def fetch_daily(symbol: str = "SPY", adjusted: bool = False, outputsize: str = "compact") -> str:
-    """
-    Fetch daily or daily-adjusted data and save to data/daily/{symbol}_daily.csv
-    Returns the output file path.
-    """
-    function_name = "TIME_SERIES_DAILY_ADJUSTED" if adjusted else "TIME_SERIES_DAILY"
-    df = get_time_series(function_name, symbol, outputsize=outputsize)
-
-    out_file = f"data/daily/{symbol}_daily.csv"
-    df.to_csv(out_file, index_label="date")
-    print(f"Saved {len(df)} daily rows for {symbol} to {out_file}")
-    return out_file
-
-
-def fetch_weekly(symbol: str = "SPY", adjusted: bool = False) -> str:
-    """
-    Fetch weekly or weekly-adjusted data and save to data/weekly/{symbol}_weekly.csv
-    Returns the output file path.
-    """
-    function_name = "TIME_SERIES_WEEKLY_ADJUSTED" if adjusted else "TIME_SERIES_WEEKLY"
-    df = get_time_series(function_name, symbol)
-
-    out_file = f"data/weekly/{symbol}_weekly.csv"
-    df.to_csv(out_file, index_label="date")
-    print(f"Saved {len(df)} weekly rows for {symbol} to {out_file}")
-    return out_file
-
-
-def fetch_monthly(symbol: str = "SPY") -> str:
-    """
-    Fetch monthly data and save to data/monthly/{symbol}_monthly.csv
-    Returns the output file path.
-    """
-    df = get_time_series("TIME_SERIES_MONTHLY", symbol)
-
-    out_file = f"data/monthly/{symbol}_monthly.csv"
-    df.to_csv(out_file, index_label="date")
-    print(f"Saved {len(df)} monthly rows for {symbol} to {out_file}")
-    return out_file
-
+def main():
+    fetch_series("TIME_SERIES_DAILY", "data/daily", "daily")
+    fetch_series("TIME_SERIES_WEEKLY", "data/weekly", "weekly")
+    fetch_series("TIME_SERIES_MONTHLY", "data/monthly", "monthly")
 
 if __name__ == "__main__":
-    # Example: fetch environment data for SPY
-    fetch_daily("SPY", adjusted=False, outputsize="compact")
-    fetch_weekly("SPY", adjusted=False)
-    fetch_monthly("SPY")
+    main()
