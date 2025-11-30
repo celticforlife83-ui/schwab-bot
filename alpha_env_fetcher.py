@@ -2,7 +2,7 @@ import requests
 import pandas as pd
 import os
 
-API_KEY = "YOUR_REAL_API_KEY_HERE"  # keep your key here
+API_KEY = "EIPBVQENOWS4IGOW"  # keep your key here
 BASE_URL = "https://www.alphavantage.co/query"
 
 # We will treat this as SPX for the bot.
