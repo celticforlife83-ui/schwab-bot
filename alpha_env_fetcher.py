@@ -5,7 +5,7 @@ import os
 # ==========================================
 # CONFIG
 # ==========================================
-API_KEY = "YOUR_ALPHA_VANTAGE_API_KEY"  # TODO: replace with my real Alpha Vantage key
+API_KEY = "AGLES6UFIY44DV4F"  # TODO: replace with my real Alpha Vantage key
 BASE_URL = "https://www.alphavantage.co/query"
 
 # Make sure data folders exist
