@@ -2,10 +2,10 @@ from env_data import load_daily, load_weekly, load_monthly
 
 
 def main():
-    # Load SPY data from the CSVs we already downloaded
-    daily = load_daily("SPY")
-    weekly = load_weekly("SPY")
-    monthly = load_monthly("SPY")
+    # Load SPX data from the CSVs we already downloaded
+    daily = load_daily("SPX")
+    weekly = load_weekly("SPX")
+    monthly = load_monthly("SPX")
 
     print("✅ Loaded data from CSV files!\n")
 
