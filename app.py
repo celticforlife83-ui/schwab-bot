@@ -3,6 +3,7 @@ from collections import defaultdict
 from indicators import compute_indicators
 from signal_logic import classify_trend, classify_day_mode
 from utils import sanitize_latest_indicators, sanitize_snapshot
+from env_brain import get_environment
 
 # -------------------------------------------------
 # Create the Flask app
@@ -211,12 +212,16 @@ def mtf_signal():
 
     day_mode_info = classify_day_mode(timeframes_data)
 
+    # Get environment data (daily/weekly/monthly context)
+    environment_data = get_environment(symbol)
+
     return jsonify({
         "ok": True,
         "symbol": symbol,
         "timeframes": timeframes_data,
         "day_mode": day_mode_info.get("day_mode"),
         "day_mode_reason": day_mode_info.get("reason"),
+        "environment": environment_data
     })
 
 # -------------------------------------------------
