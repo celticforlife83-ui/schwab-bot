@@ -3,6 +3,7 @@ from collections import defaultdict
 from indicators import compute_indicators
 from signal_logic import classify_trend, classify_day_mode
 from utils import sanitize_latest_indicators, sanitize_snapshot
+from env_brain import get_environment
 
 # -------------------------------------------------
 # Create the Flask app
@@ -181,6 +182,7 @@ def mtf_signal():
     if not symbol or not tf_param:
         return jsonify({"ok": False, "error": "symbol and timeframes are required"}), 400
 
+    # Split timeframes like "1m,5m,15m" into a Python list
     tf_list = [tf.strip() for tf in tf_param.split(",") if tf.strip()]
     timeframes_data = {}
 
@@ -198,22 +200,28 @@ def mtf_signal():
         latest_candle = candles_for_tf[-1]
         snapshot = sanitize_snapshot(latest_candle, latest_indicators)
 
+        # Classify trend for this timeframe
         trend_info = classify_trend(snapshot)
         if isinstance(trend_info, dict):
             snapshot["trend_label"] = trend_info.get("trend")
             snapshot["trend_strength"] = trend_info.get("strength")
             snapshot["trend_reason"] = trend_info.get("reason")
         else:
-            # If classify_trend returns just a string like "BULLISH"/"BEARISH"/"CHOP"
+            # Old style, just a string
             snapshot["trend_label"] = trend_info
 
         timeframes_data[tf] = snapshot
 
+    # 🔥 NEW: pull in the big environment brain (daily/weekly/monthly)
+    env_snapshot = get_environment()  # defaults to SPX environment
+
+    # Day mode uses the per-timeframe snapshots
     day_mode_info = classify_day_mode(timeframes_data)
 
     return jsonify({
         "ok": True,
         "symbol": symbol,
+        "environment": env_snapshot,  # 👈 NEW: big boss brain info
         "timeframes": timeframes_data,
         "day_mode": day_mode_info.get("day_mode"),
         "day_mode_reason": day_mode_info.get("reason"),
