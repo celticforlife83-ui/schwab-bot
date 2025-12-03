@@ -11,7 +11,7 @@ from urllib.parse import urlparse, parse_qs
 # ==========================================
 APP_KEY = "duVi4SZ4do75pldeMLACvutzg7vJBWMmNYsf26mv3kAQoHmO"          # "App Key" from Schwab Portal
 APP_SECRET = "p3VfFZXLUIxrR5jAKGg3DDh515stoHup8mmSk9MnolxE96gM48P5v2btimatERAD"    # "Secret" from Schwab Portal
-REDIRECT_URL = "https://127.0.0.1"     # Your approved Redirect URL
+REDIRECT_URL = "https://127.0.0.1/"     # Your approved Redirect URL
 # ==========================================
 
 # Constants
