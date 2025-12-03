@@ -3,107 +3,112 @@ import json
 import time
 import base64
 import os
-from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 
 # ==========================================
-# 🔐 USER CONFIGURATION (FILL THESE IN)
+# 🔐 USER CONFIGURATION (EDIT THESE 3 LINES)
 # ==========================================
-APP_KEY = "duVi4SZ4do75pldeMLACvutzg7vJBWMmNYsf26mv3kAQoHmO"          # "App Key" from Schwab Portal
-APP_SECRET = "p3VfFZXLUIxrR5jAKGg3DDh515stoHup8mmSk9MnolxE96gM48P5v2btimatERAD"    # "Secret" from Schwab Portal
-REDIRECT_URL = "https://127.0.0.1/"     # Your approved Redirect URL
+APP_KEY = "YOUR_APP_KEY_HERE"       # Paste App Key
+APP_SECRET = "YOUR_APP_SECRET_HERE" # Paste Secret
+REDIRECT_URL = "https://127.0.0.1/" # Must match dashboard exactly
 # ==========================================
 
 # Constants
 TOKEN_FILE = "schwab_tokens.json"
-
-# ✅ FIXED: use the real Schwab API domain
 BASE_URL = "https://api.schwabapi.com/marketdata/v1"
 AUTH_URL = "https://api.schwabapi.com/v1/oauth/token"
 
-
 def save_tokens(tokens):
-    """Saves tokens to a local file."""
+    """Saves tokens to a local file with an expiration timestamp."""
+    # Schwab tokens usually last 30 mins (1800s). We set safety buffer.
     tokens["expires_at"] = time.time() + tokens.get("expires_in", 1800)
     with open(TOKEN_FILE, "w") as f:
         json.dump(tokens, f, indent=4)
-    print(f"✅ Tokens saved to {TOKEN_FILE}")
-
+    print(f"💾 Tokens saved/updated in {TOKEN_FILE}")
 
 def load_tokens():
     """Loads tokens from file if they exist."""
     if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, "r") as f:
-            return json.load(f)
+        try:
+            with open(TOKEN_FILE, "r") as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            print("⚠️ Token file was empty or corrupted.")
+            return None
     return None
 
-
-def get_auth_headers(tokens):
-    return {"Authorization": f"Bearer {tokens['access_token']}"}
-
-
 def authenticate():
-    """Handles the full OAuth flow: Load -> Refresh -> or New Login."""
+    """
+    Handles the full OAuth flow: 
+    1. Load existing tokens.
+    2. Refresh them if expired.
+    3. If all else fails, prompt user for manual login.
+    """
     tokens = load_tokens()
 
-    # 1) Try to use / refresh existing tokens
+    # --- CASE A: WE HAVE TOKENS, TRY TO REFRESH ---
     if tokens:
-        # Still valid?
-        if time.time() < tokens["expires_at"] - 60:
+        # Check if they are about to expire (less than 60s left)
+        if time.time() < tokens.get("expires_at", 0) - 60:
             return tokens
-
-        print("🔄 Token expired. Refreshing...")
+        
+        print("🔄 Tokens expired. Attempting refresh...")
+        
         headers = {
-            "Authorization": "Basic "
-            + base64.b64encode(f"{APP_KEY}:{APP_SECRET}".encode()).decode(),
+            "Authorization": "Basic " + base64.b64encode(f"{APP_KEY}:{APP_SECRET}".encode()).decode(),
             "Content-Type": "application/x-www-form-urlencoded",
         }
         data = {
             "grant_type": "refresh_token",
             "refresh_token": tokens["refresh_token"],
         }
+        
         response = requests.post(AUTH_URL, headers=headers, data=data)
+        
         if response.status_code == 200:
             new_tokens = response.json()
-            # Schwab may not always return refresh_token again
+            # CRITICAL: Schwab doesn't always send a NEW refresh token. 
+            # If they didn't, we must keep the old one.
             if "refresh_token" not in new_tokens:
                 new_tokens["refresh_token"] = tokens["refresh_token"]
+            
             save_tokens(new_tokens)
             return new_tokens
         else:
-            print(f"❌ Refresh failed: {response.text}")
-            print("➡️ You must log in again.")
+            print(f"❌ Refresh failed ({response.status_code}). Reason: {response.text}")
+            print("➡️ Falling back to manual login...")
 
-    # 2) New Login Flow (manual first time)
+    # --- CASE B: MANUAL LOGIN (First time or Refresh Failed) ---
+    print("\n⚠️ MANUAL AUTHENTICATION REQUIRED")
+    
     auth_link = (
         f"https://api.schwabapi.com/v1/oauth/authorize"
         f"?client_id={APP_KEY}&redirect_uri={REDIRECT_URL}"
     )
-    print("\n⚠️ NO VALID TOKENS FOUND. PLEASE LOG IN.")
-    print(f"1. Copy & open this link in your browser: {auth_link}")
-    print("2. Log in and approve access.")
-    print("3. When redirected to a blank page, COPY the full URL from the address bar.\n")
+    
+    print(f"1. Copy/Paste this URL into your browser:\n{auth_link}\n")
+    print("2. Log in, click 'Allow'.")
+    print("3. When you see 'This site can’t be reached', COPY the URL from address bar.")
+    
+    redirected_url = input("\n👇 Paste the full URL here: ").strip()
 
-    redirected_url = input("Paste the full redirected URL here: ").strip()
-
-    # Extract ?code=... value safely
+    # Extract code safely
     try:
         parsed = urlparse(redirected_url)
         query_params = parse_qs(parsed.query)
         code = query_params.get("code", [None])[0]
     except Exception as e:
-        print(f"❌ Could not parse code from URL: {e}")
-        code = None
-
-    if not code:
-        print("❌ No 'code' parameter found in the URL you pasted.")
-        print("Please run the script again and make sure you paste the FULL URL.")
+        print(f"❌ Error parsing URL: {e}")
         return None
 
-    print("🔑 Exchanging code for tokens...")
+    if not code:
+        print("❌ Could not find 'code' in the URL. Did you copy the whole thing?")
+        return None
+
+    print("🔑 Exchanging code for access tokens...")
+    
     headers = {
-        "Authorization": "Basic "
-        + base64.b64encode(f"{APP_KEY}:{APP_SECRET}".encode()).decode(),
+        "Authorization": "Basic " + base64.b64encode(f"{APP_KEY}:{APP_SECRET}".encode()).decode(),
         "Content-Type": "application/x-www-form-urlencoded",
     }
     data = {
@@ -113,25 +118,31 @@ def authenticate():
     }
 
     response = requests.post(AUTH_URL, headers=headers, data=data)
+    
     if response.status_code == 200:
         tokens = response.json()
         save_tokens(tokens)
+        print("✅ SUCCESS! We are authenticated.")
         return tokens
     else:
-        print(f"❌ Login Failed: {response.status_code} - {response.text}")
+        print(f"❌ Authentication Failed: {response.status_code}")
+        print(response.text)
         return None
 
-
 def download_spx_history(tokens):
-    """Downloads SPX history using the valid token."""
-    print("\n📈 Requesting SPX Data for 2024-10-28...")
+    """Downloads SPX candles for a specific timeframe."""
+    if not tokens:
+        print("❌ No tokens available. Cannot download.")
+        return
 
-    # timestamps for Oct 28 2024 (approximate market hours in ms)
-    start_ms = 1730122200000
-    end_ms = 1730145600000
+    print("\n📈 Requesting SPX Data (Replay: Oct 28, 2024)...")
+
+    # Hardcoded for the requested replay scenario
+    start_ms = 1730122200000  # Oct 28 9:30 AM ET
+    end_ms = 1730145600000    # Oct 28 4:00 PM ET
 
     params = {
-        "symbol": "$SPX",
+        "symbol": "$SPX",  # Schwab uses $ for indices usually
         "periodType": "day",
         "period": 1,
         "frequencyType": "minute",
@@ -141,28 +152,41 @@ def download_spx_history(tokens):
         "needExtendedHoursData": "true",
     }
 
-    response = requests.get(
-        f"{BASE_URL}/pricehistory", headers=get_auth_headers(tokens), params=params
-    )
+    url = f"{BASE_URL}/pricehistory"
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
-    if response.status_code == 200:
-        data = response.json()
-        candles = data.get("candles", [])
-        print(f"✅ SUCCESS: Downloaded {len(candles)} candles.")
-
-        filename = "schwab_spx_history.json"
-        with open(filename, "w") as f:
-            json.dump(candles, f, indent=2)
-        print(f"💾 Saved to {filename}")
-        return candles
-    else:
-        print(
-            f"❌ Data Download Failed: {response.status_code} - {response.text}"
-        )
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        
+        if response.status_code == 200:
+            data = response.json()
+            candles = data.get("candles", [])
+            
+            if not candles:
+                print("⚠️ Request succeeded, but returned 0 candles. (Market closed? Wrong symbol?)")
+            else:
+                print(f"✅ SUCCESS: Downloaded {len(candles)} candles.")
+                
+                # Save to file for inspection
+                filename = "schwab_spx_history.json"
+                with open(filename, "w") as f:
+                    json.dump(candles, f, indent=2)
+                print(f"📄 Data saved to {filename}")
+                
+            return candles
+        else:
+            print(f"❌ API Error: {response.status_code}")
+            print(response.text)
+            return []
+            
+    except Exception as e:
+        print(f"❌ Connection Error: {e}")
         return []
 
-
 if __name__ == "__main__":
-    tokens = authenticate()
-    if tokens:
-        download_spx_history(tokens)
+    # 1. Authenticate (Auto-refresh or Manual)
+    valid_tokens = authenticate()
+    
+    # 2. If we have tokens, run the download test
+    if valid_tokens:
+        download_spx_history(valid_tokens)
