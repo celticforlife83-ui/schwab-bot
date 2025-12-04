@@ -8,8 +8,8 @@ from urllib.parse import urlparse, parse_qs
 # ==========================================
 # 🔐 USER CONFIGURATION (EDIT THESE 3 LINES)
 # ==========================================
-APP_KEY = "YOUR_APP_KEY_HERE"       # Paste App Key
-APP_SECRET = "YOUR_APP_SECRET_HERE" # Paste Secret
+APP_KEY = "duVi4SZ4do75pldeMLACvutzg7vJBWMmNYsf26mv3kAQoHmO"       # Paste App Key
+APP_SECRET = "p3VfFZXLUIxrR5jAKGg3DDh515stoHup8mmSk9MnolxE96gM48P5v2btimatERAD" # Paste Secret
 REDIRECT_URL = "https://127.0.0.1/" # Must match dashboard exactly
 # ==========================================
 
